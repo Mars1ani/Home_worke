@@ -23,6 +23,16 @@ async def help_command(message: Message):
     await message.answer("/start - начать работу с ботом\n/help - помощь")
 
 
+@router.message(Command('menu'))
+async def menu_command(message: Message):
+    keyboard = [
+        [("Время", "time"), ("Случайное число", "random")],
+        [("Анекдот", "joke"), ("Мем", "mem")],
+    ]
+    await message.answer("Выберите команду:", reply_markup=keyboard)
+
+
+
 @router.message(Command("time"))
 async def time_command(message: Message):
     now =datetime.now()
