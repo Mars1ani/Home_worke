@@ -3,8 +3,11 @@ from decouple import config
 from aiogram import Bot, Dispatcher, Router, F
 import asyncio
 from aiogram.filters import Command
-from datetime import datetime
-from aiogram.types import Message, FSInputFile
+from aiogram.types import Message, FSInputFile, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.memory import MemoryStorage
+
 import logging
 import random
 
@@ -12,10 +15,21 @@ token = config('BOT_TOKEN')
 
 router = Router()
 
+drinks_db = []
+
+class AddProduct(StatesGroup):
+    product_1 = State()
+    product_2 = State()
+    product_3 = State()
+
+
 @router.message(Command("start"))
 async def start_command(message: Message, bot: Bot):
     await message.answer("Напиши мне  свое имя")
-    await bot.send_message(chat_id=message.chat.id, text="Привет! Я бот, который поможет тебе с твоими задачами.")
+    about_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="О нас", callback_data="about")]
+    ])
+    await bot.send_message(chat_id=message.chat.id, text="Привет! Я бот, который поможет тебе с твоими задачами.", reply_markup=about_keyboard)
 
 
 @router.message(Command("help"))
@@ -25,12 +39,15 @@ async def help_command(message: Message):
 
 @router.message(Command('menu'))
 async def menu_command(message: Message):
-    keyboard = [
-        [("Время", "time"), ("Случайное число", "random")],
-        [("Анекдот", "joke"), ("Мем", "mem")],
-    ]
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="/time"), KeyboardButton(text="/random")],
+            [KeyboardButton(text="/joke"), KeyboardButton(text="/mem")],
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
     await message.answer("Выберите команду:", reply_markup=keyboard)
-
 
 
 @router.message(Command("time"))
@@ -65,6 +82,55 @@ async def hello_command(message: Message):
     await message.answer("Привет! Как дела?")
 
 
+@router.message(F.text == 'пока')
+async def bye_command(message: Message):
+    await message.answer("До встречи!")
+
+@router.callback_query(lambda c: c.data == 'about')
+async def about_callback(callback_query: CallbackQuery):
+    await callback_query.answer()
+    await callback_query.message.answer("Наше кафе — уютное место с свежими напитками и приятной атмосферой.")
+
+
+@router.message(Command('add_product'))
+async def add_product_start(message: Message, state: FSMContext):
+    await state.set_state(AddProduct.product_1)
+    await message.answer("Введите напиток 1:")
+
+
+@router.message(AddProduct.product_1)
+async def add_product_1(message: Message, state: FSMContext):
+    await state.update_data(product_1=message.text)
+    await state.set_state(AddProduct.product_2)
+    await message.answer("Введите напиток 2:")
+
+
+@router.message(AddProduct.product_2)
+async def add_product_2(message: Message, state: FSMContext):
+    await state.update_data(product_2=message.text)
+    await state.set_state(AddProduct.product_3)
+    await message.answer("Введите напиток 3:")
+
+
+@router.message(AddProduct.product_3)
+async def add_product_3(message: Message, state: FSMContext):
+    data = await state.get_data()
+    drinks = [data['product_1'], data['product_2'], message.text]
+    drinks_db.extend(drinks)
+    await message.answer("Напитки добавлены в меню.")
+    await state.clear()
+
+
+@router.message(Command('drinks'))
+async def drinks_command(message: Message):
+    if not drinks_db:
+        await message.answer("Меню пока пустое")
+        return
+
+    drinks_list = "\n".join(f"- {drink}" for drink in drinks_db)
+    await message.answer(f"Наши напитки:\n{drinks_list}")
+
+
 @router.message(Command('mem'))
 async def mem_command(message: Message, bot: Bot):
     photo = FSInputFile('media/mem.png')
@@ -78,7 +144,7 @@ async def echo(message: Message):
 async def main():
     logging.basicConfig(level=logging.INFO)
     bot = Bot(token=token)
-    dp = Dispatcher()
+    dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(router=router)
     await dp.start_polling(bot)
 
